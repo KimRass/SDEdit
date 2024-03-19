@@ -57,8 +57,8 @@ class MedianPool2d(nn.Module):
         return x
 
 
-def main(image, kernel_size=3, n_colors=10):
-    med_filter = MedianPool2d(kernel_size=kernel_size, stride=1, padding=0)
+def simulate_user_stroke_input(image, kernel_size=3, n_colors=10):
+    med_filter = MedianPool2d(kernel_size=kernel_size, stride=1, padding=1)
 
     image = med_filter(image[None, ...])
     grid = image_to_grid(image, n_cols=1)
@@ -68,14 +68,14 @@ def main(image, kernel_size=3, n_colors=10):
     return to_pil(quantized_grid)
 
 
-if __name__ == "__main__":
+if __name__ == "__simulate_user_stroke_input__":
     data_dir = "/Users/jongbeomkim/Documents/datasets"
     img_size = 64
     ds = CelebADS(
         data_dir=data_dir, split="test", img_size=img_size, hflip=False,
     )
     image = ds[3]
-    image = main(image)
+    image = simulate_user_stroke_input(image)
     image.show()
 
     # from PIL.ImageFilter import MedianFilter
