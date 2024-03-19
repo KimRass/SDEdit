@@ -5,25 +5,13 @@
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 import numpy as np
-import imageio
 from tqdm import tqdm
-import contextlib
+import numpy as np
 
 from celeba import CelebADS
 from utils import image_to_grid
-from stroke import simulate_user_stroke_input
-
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-import numpy as np
-
-transform = A.Compose(
-    [
-        A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)), ToTensorV2(),
-    ]
-)
+from stroke import StrokeSimulator
 
 
 class DDPM(nn.Module):
@@ -147,6 +135,11 @@ class DDPM(nn.Module):
 
 
 class SDEdit(DDPM):
+    def __init__(self, kernel_size=3):
+        super().__init__()
+
+        self.stroke_sim = StrokeSimulator(kernel_size=kernel_size)
+
     def select_and_batchify_ref(self, data_dir, ref_idx, batch_size):
         # if dataset == "celeba":
         ds = CelebADS(
@@ -161,9 +154,8 @@ class SDEdit(DDPM):
             ref_idx=ref_idx,
             batch_size=batch_size,
         )
-        stroke = simulate_user_stroke_input(ori_image, n_colors=n_colors)
-        stroke = transform(image=np.array(stroke))["image"][None, ...].to(self.device)
-        # print(ori_image.shape, stroke.shape, stroke.device)
+        stroke = self.stroke_sim(ori_image, n_colors=n_colors).to(self.device)
+        # stroke = transform(image=np.array(stroke))["image"][None, ...].to(self.device)
 
         diffusion_step = self.batchify_diffusion_steps(
             diffusion_step_idx=diffusion_step_idx - 1, batch_size=1,

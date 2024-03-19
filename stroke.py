@@ -6,10 +6,59 @@ import torch.nn.functional as F
 from torch.nn.modules.utils import _pair, _quadruple
 import numpy as np
 import cv2
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+from collections import Counter
 
 from celeba import CelebADS
-from utils import image_to_grid, to_pil
-from quantize3 import test_opencv
+from utils import image_to_grid
+
+
+def update_n_colors(label, n_pixels, thresh_pixel_per, n_colors):
+    n_colors_under_thresh = 0
+    label = label.flatten()
+    color_count = Counter(label)
+    for (_, count) in color_count.items():
+        if count / n_pixels < thresh_pixel_per:
+            n_colors_under_thresh += 1
+    n_colors -= -(-n_colors_under_thresh // 2) # Ceil integer division.
+    return n_colors, n_colors_under_thresh
+
+
+def process_result(center, label, shape, conv_method):
+    center = center.astype("uint8")
+    quantized_img = center[label]
+    quantized_img = quantized_img.reshape(shape)
+    quantized_img = cv2.cvtColor(quantized_img, conv_method)
+    center = cv2.cvtColor(np.expand_dims(center, axis=0), conv_method)[0]
+    return quantized_img
+
+
+def quantize_img(
+    img, n_colors, method1=cv2.COLOR_RGB2Lab, method2=cv2.COLOR_Lab2RGB,
+):
+    img = cv2.cvtColor(np.array(img), method1)
+    flat_img = img.reshape((-1, 3)).astype("float32")
+    n_pixels = img.size
+
+    thresh_pixel_per = 0.01
+    n_colors_under_thresh = n_colors
+    criteria = (
+        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+        10,
+        1.0,
+    )
+    center = None
+    label = None
+
+    while n_colors_under_thresh > 0:
+        _, label, center = cv2.kmeans(
+            flat_img, n_colors, None, criteria, 10, cv2.KMEANS_PP_CENTERS
+        )
+        n_colors, n_colors_under_thresh = update_n_colors(
+            label, n_pixels, thresh_pixel_per, n_colors  # , flat_img
+        )
+    return process_result(center, label, img.shape, method2)
 
 
 class MedianPool2d(nn.Module):
@@ -22,10 +71,11 @@ class MedianPool2d(nn.Module):
          same: override padding and enforce same padding, boolean
     """
     def __init__(self, kernel_size=3, stride=1, padding=0, same=False):
-        super(MedianPool2d, self).__init__()
+        super().__init__()
+
         self.k = _pair(kernel_size)
         self.stride = _pair(stride)
-        self.padding = _quadruple(padding)  # convert to l, r, t, b
+        self.padding = _quadruple(padding) # Convert to LTRB.
         self.same = same
 
     def _padding(self, x):
@@ -49,36 +99,51 @@ class MedianPool2d(nn.Module):
         return padding
     
     def forward(self, x):
-        # using existing pytorch functions and tensor ops so that we get autograd, 
-        # would likely be more efficient to implement from scratch at C/Cuda level
         x = F.pad(x, self._padding(x), mode='reflect')
         x = x.unfold(2, self.k[0], self.stride[0]).unfold(3, self.k[1], self.stride[1])
         x = x.contiguous().view(x.size()[:4] + (-1,)).median(dim=-1)[0]
         return x
 
 
-def simulate_user_stroke_input(image, kernel_size=3, n_colors=10):
-    med_filter = MedianPool2d(kernel_size=kernel_size, stride=1, padding=1)
+class StrokeSimulator(object):
+    def __init__(self, kernel_size):
+        self.transform = A.Compose(
+            [
+                A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)), ToTensorV2(),
+            ]
+        )
+        self.med_filter = MedianPool2d(
+            kernel_size=kernel_size, stride=1, padding=kernel_size // 2,
+        )
 
-    image = med_filter(image[None, ...])
-    grid = image_to_grid(image, n_cols=1)
-    quantized_grid = test_opencv(
-        np.array(grid), cv2.COLOR_RGB2BGR, cv2.COLOR_BGR2RGB, n_colors=n_colors,
-    )
-    return to_pil(quantized_grid)
+    def quantize_image_tensor(self, image, n_colors):
+        new_batches = list()
+        for batch in torch.chunk(image, chunks=image.size(0), dim=0):
+            image = image_to_grid(batch, n_cols=1)
+            img = np.array(image)
+            quantized_img = quantize_img(img, n_colors=n_colors)
+            quantized_image = self.transform(image=quantized_img)["image"]
+            new_batches.append(quantized_image)
+        return torch.stack(new_batches, dim=0)
+
+    def __call__(self, image, n_colors=10):
+        image = self.med_filter(image)
+        return self.quantize_image_tensor(image, n_colors=n_colors)
 
 
-if __name__ == "__simulate_user_stroke_input__":
-    data_dir = "/Users/jongbeomkim/Documents/datasets"
+if __name__ == "__main__":
+    import torch
+
+    data_dir = "/home/dmeta0304/Documents/datasets/"
     img_size = 64
+
     ds = CelebADS(
         data_dir=data_dir, split="test", img_size=img_size, hflip=False,
     )
-    image = ds[3]
-    image = simulate_user_stroke_input(image)
-    image.show()
+    image = torch.stack([ds[0], ds[1], ds[2], ds[3]], dim=0)
 
-    # from PIL.ImageFilter import MedianFilter
-    
-    # med_filter = MedianFilter(size=23)
-    # image = med_filter.filter(image[None, ...])
+    n_colors = 3
+    stroke_sim = StrokeSimulator(kernel_size=3)
+    quant_image = stroke_sim(image, n_colors=n_colors)
+    quant_grid = image_to_grid(quant_image, n_cols=1)
+    quant_grid.show()

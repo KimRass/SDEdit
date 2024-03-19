@@ -77,15 +77,15 @@ def get_elapsed_time(start_time):
     return timedelta(seconds=round(time() - start_time))
 
 
-def denorm(x, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
+def denorm(x, mean, std):
     return TF.normalize(
         x, mean=-(np.array(mean) / np.array(std)), std=(1 / np.array(std)),
     )
 
 
-def image_to_grid(image, n_cols):
+def image_to_grid(image, n_cols, mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)):
     tensor = image.clone().detach().cpu()
-    tensor = denorm(tensor)
+    tensor = denorm(tensor, mean=mean, std=std)
     grid = make_grid(tensor, nrow=n_cols, padding=1, pad_value=1)
     grid.clamp_(0, 1)
     grid = TF.to_pil_image(grid)
