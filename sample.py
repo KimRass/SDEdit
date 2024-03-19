@@ -12,6 +12,13 @@ from sdedit import SDEdit
 def get_args():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument(
+        "--mode",
+        type=str,
+        required=True,
+        choices=["from_stroke"],
+    )
+
     parser.add_argument("--model_params", type=str, required=True)
     parser.add_argument("--img_size", type=int, required=True)
     parser.add_argument("--dataset", type=str, required=True)
@@ -19,16 +26,7 @@ def get_args():
     parser.add_argument("--ref_idx", type=int, required=True)
     parser.add_argument("--diffusion_step_idx", type=int, required=True)
     parser.add_argument("--n_colors", type=int, required=True)
-
-    # For single_ref, denoising_process modes only
-    parser.add_argument("--batch_size", type=int, required=False)
-
-    parser.add_argument(
-        "--mode",
-        type=str,
-        required=True,
-        choices=["from_stroke"],
-    )
+    parser.add_argument("--batch_size", type=int, required=True)
 
     args = parser.parse_args()
 
@@ -99,9 +97,10 @@ def main():
             ref_idx=args.REF_IDX,
             diffusion_step_idx=args.DIFFUSION_STEP_IDX,
             n_colors=args.N_COLORS,
+            batch_size=args.BATCH_SIZE,
         )
-        gen_grid = image_to_grid(gen_image, n_cols=3)
-        # gen_grid.show()
+        gen_grid = image_to_grid(gen_image, n_cols=int(args.BATCH_SIZE ** 0.5))
+        gen_grid.show()
         save_image(gen_grid, save_path=save_path)
 
 

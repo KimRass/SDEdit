@@ -1,6 +1,8 @@
 # References:
     # https://gist.github.com/rwightman/f2d3849281624be7c0f11c85c87c1598
+    # https://github.com/Chadys/QuantizeImageMethods/blob/master/demo_quantize_methods.py
 
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules.utils import _pair, _quadruple
@@ -44,9 +46,7 @@ def quantize_img(
     thresh_pixel_per = 0.01
     n_colors_under_thresh = n_colors
     criteria = (
-        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
-        10,
-        1.0,
+        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0,
     )
     center = None
     label = None

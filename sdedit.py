@@ -135,8 +135,8 @@ class DDPM(nn.Module):
 
 
 class SDEdit(DDPM):
-    def __init__(self, kernel_size=3):
-        super().__init__()
+    def __init__(self, model, img_size, device, kernel_size=3):
+        super().__init__(model=model, img_size=img_size, device=device)
 
         self.stroke_sim = StrokeSimulator(kernel_size=kernel_size)
 
@@ -145,28 +145,27 @@ class SDEdit(DDPM):
         ds = CelebADS(
             data_dir=data_dir, split="test", img_size=self.img_size, hflip=False,
         )
-        # return ds[ref_idx][None, ...].to(self.device).repeat(batch_size, 1, 1, 1)
-        return ds[ref_idx].to(self.device)
+        return ds[ref_idx][None, ...].to(self.device).repeat(batch_size, 1, 1, 1)
+        # return ds[ref_idx].to(self.device)
 
-    def sample_from_stroke(self, data_dir, ref_idx, diffusion_step_idx, n_colors, batch_size=1):
-        ori_image = self.select_and_batchify_ref(
+    def sample_from_stroke(self, data_dir, ref_idx, diffusion_step_idx, n_colors, batch_size):
+        ref = self.select_and_batchify_ref(
             data_dir=data_dir,
             ref_idx=ref_idx,
-            batch_size=batch_size,
+            batch_size=batch_size - 2,
         )
-        stroke = self.stroke_sim(ori_image, n_colors=n_colors).to(self.device)
-        # stroke = transform(image=np.array(stroke))["image"][None, ...].to(self.device)
+        stroke = self.stroke_sim(ref, n_colors=n_colors).to(self.device)
 
         diffusion_step = self.batchify_diffusion_steps(
-            diffusion_step_idx=diffusion_step_idx - 1, batch_size=1,
+            diffusion_step_idx=diffusion_step_idx - 1, batch_size=batch_size - 2,
         )
         noisy_stroke = self.perform_diffusion_process(
             ori_image=stroke,
             diffusion_step=diffusion_step,
         )
 
-        denoised_image =  self.perform_denoising_process(
+        denoised_stroke = self.perform_denoising_process(
             noisy_image=noisy_stroke,
             start_diffusion_step_idx=diffusion_step_idx - 1,
         )
-        return torch.cat([ori_image[None, ...], stroke[: 1, ...], denoised_image], dim=0)
+        return torch.cat([ref[: 1, ...], stroke[: 1, ...], denoised_stroke], dim=0)
