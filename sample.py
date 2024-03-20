@@ -17,7 +17,7 @@ def get_args():
         "--mode",
         type=str,
         required=True,
-        choices=["from_stroke"],
+        choices=["from_sim_stroke"],
     )
 
     parser.add_argument("--model_params", type=str, required=True)
@@ -60,7 +60,7 @@ def pref_to_save_path(samples_dir, pref, suffix):
 
 def get_save_path(samples_dir, mode, dataset, ref_idx, interm_time):
     pref = f"mode={mode}/dataset={dataset}/ref_idx={ref_idx}"
-    if mode in ["from_stroke"] and interm_time != 0:
+    if mode in ["from_sim_stroke"] and interm_time != 0:
         pref += f"-interm_time={interm_time:.2f}"
     return pref_to_save_path(samples_dir=samples_dir, pref=pref, suffix=".jpg")
 
@@ -94,8 +94,8 @@ def main():
         ref_idx=args.REF_IDX,
         interm_time=args.INTERM_TIME,
     )
-    if args.MODE == "from_stroke":
-        gen_image = model.sample_from_stroke(
+    if args.MODE == "from_sim_stroke":
+        gen_image = model.sample_from_sim_stroke(
             ref_idx=args.REF_IDX,
             interm_time=args.INTERM_TIME,
             n_colors=args.N_COLORS,

@@ -8,7 +8,7 @@ model_params="/home/dmeta0304/Downloads/ddpm_celeba_64×64.pth"
 img_size=64
 dataset="celeba"
 data_dir="/home/dmeta0304/Documents/datasets"
-interm_time=0.60
+interm_time=0.45
 n_colors=6
 batch_size=36
 
@@ -16,7 +16,7 @@ ref_indices=(132 133 134 135)
 for ref_idx in "${ref_indices[@]}"
 do
     python3 ../sample.py\
-        --mode="from_stroke"\
+        --mode="from_sim_stroke"\
         --model_params="$model_params"\
         --img_size=$img_size\
         --dataset="$dataset"\
