@@ -71,6 +71,7 @@ def create_dir(x):
 def save_image(image, save_path):
     create_dir(save_path)
     to_pil(image).save(str(save_path), quality=100)
+    print(f"Saved image as '{Path(save_path).name}'.")
 
 
 def get_elapsed_time(start_time):

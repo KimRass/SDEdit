@@ -6,7 +6,8 @@ import gc
 
 from utils import get_device, image_to_grid, save_image
 from unet import UNet
-from sdedit import SDEdit
+# from sdedit import SDEdit
+from sdedit2 import SDEdit
 
 
 def get_args():
@@ -24,7 +25,7 @@ def get_args():
     parser.add_argument("--dataset", type=str, required=True)
     parser.add_argument("--data_dir", type=str, required=True)
     parser.add_argument("--ref_idx", type=int, required=True)
-    parser.add_argument("--diffusion_step_idx", type=int, required=True)
+    parser.add_argument("--interm_time", type=float, required=True)
     parser.add_argument("--n_colors", type=int, required=True)
     parser.add_argument("--batch_size", type=int, required=True)
 
@@ -54,13 +55,13 @@ def get_max_sample_num(samples_dir, pref):
 def pref_to_save_path(samples_dir, pref, suffix):
     max_sample_num = get_max_sample_num(samples_dir, pref=pref)
     save_stem = f"{pref}-{max_sample_num + 1}"
-    return str((Path(samples_dir)/save_stem).with_suffix(suffix))
+    return f"{Path(samples_dir)/save_stem}{suffix}"
 
 
-def get_save_path(samples_dir, mode, dataset, ref_idx, diffusion_step_idx):
+def get_save_path(samples_dir, mode, dataset, ref_idx, interm_time):
     pref = f"mode={mode}/dataset={dataset}/ref_idx={ref_idx}"
-    if mode in ["from_stroke"] and diffusion_step_idx != 0:
-        pref += f"-diffusion_step_idx={diffusion_step_idx}"
+    if mode in ["from_stroke"] and interm_time != 0:
+        pref += f"-interm_time={interm_time:.2f}"
     return pref_to_save_path(samples_dir=samples_dir, pref=pref, suffix=".jpg")
 
 
@@ -80,7 +81,9 @@ def main():
     SAMPLES_DIR = Path(__file__).resolve().parent/"samples"
 
     net = UNet()
-    model = SDEdit(model=net, img_size=args.IMG_SIZE, device=DEVICE)
+    model = SDEdit(
+        model=net, data_dir=args.DATA_DIR, img_size=args.IMG_SIZE, device=DEVICE,
+    )
     state_dict = torch.load(str(args.MODEL_PARAMS), map_location=DEVICE)
     model.load_state_dict(state_dict)
 
@@ -89,18 +92,17 @@ def main():
         mode=args.MODE,
         dataset=args.DATASET,
         ref_idx=args.REF_IDX,
-        diffusion_step_idx=args.DIFFUSION_STEP_IDX,
+        interm_time=args.INTERM_TIME,
     )
     if args.MODE == "from_stroke":
         gen_image = model.sample_from_stroke(
-            data_dir=args.DATA_DIR,
             ref_idx=args.REF_IDX,
-            diffusion_step_idx=args.DIFFUSION_STEP_IDX,
+            interm_time=args.INTERM_TIME,
             n_colors=args.N_COLORS,
             batch_size=args.BATCH_SIZE,
         )
         gen_grid = image_to_grid(gen_image, n_cols=int(args.BATCH_SIZE ** 0.5))
-        gen_grid.show()
+        # gen_grid.show()
         save_image(gen_grid, save_path=save_path)
 
 
