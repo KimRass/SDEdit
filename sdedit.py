@@ -25,6 +25,9 @@ class DDPM(nn.Module):
         self.alpha = 1 - self.beta
         self.alpha_bar = torch.cumprod(self.alpha, dim=0)
 
+        self.signal_rate = self.alpha_bar ** 0.5 # "$\alpha(t)$"
+        self.noise_rate = (1 - self.alpha ** 2) ** 0.5 # "$\sigma(t)$"
+
     def __init__(
         self,
         model,
@@ -63,21 +66,25 @@ class DDPM(nn.Module):
             0, self.n_diffusion_steps, size=(batch_size,), device=self.device,
         )
 
-    def batchify_diffusion_steps(self, diffusion_step_idx, batch_size):
+    def batchify_diffusion_steps(self, step, batch_size):
         return torch.full(
             size=(batch_size,),
-            fill_value=diffusion_step_idx,
+            fill_value=step,
             dtype=torch.long,
             device=self.device,
         )
 
     def perform_diffusion_process(self, ori_image, diffusion_step, rand_noise=None):
-        alpha_bar_t = self.index(self.alpha_bar, diffusion_step=diffusion_step)
-        mean = (alpha_bar_t ** 0.5) * ori_image
-        var = 1 - alpha_bar_t
+        """
+        $\mathbf{x}(t)
+        = \alpha(t)\mathbf{x}(0) + \sigma(t)\mathbf{z},
+        \mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$
+        """
+        signal_rate_t = self.index(self.signal_rate, diffusion_step=diffusion_step)
+        noise_rate_t = self.index(self.noise_rate, diffusion_step=diffusion_step)
         if rand_noise is None:
             rand_noise = self.sample_noise(batch_size=ori_image.size(0))
-        noisy_image = mean + (var ** 0.5) * rand_noise
+        noisy_image = signal_rate_t * ori_image + noise_rate_t * rand_noise
         return noisy_image
 
     def forward(self, noisy_image, diffusion_step):
@@ -86,9 +93,9 @@ class DDPM(nn.Module):
         )
 
     @torch.inference_mode()
-    def take_denoising_step(self, noisy_image, diffusion_step_idx):
+    def take_denoising_step(self, noisy_image, step):
         diffusion_step = self.batchify_diffusion_steps(
-            diffusion_step_idx=diffusion_step_idx, batch_size=noisy_image.size(0),
+            step=step, batch_size=noisy_image.size(0),
         )
         alpha_t = self.index(self.alpha, diffusion_step=diffusion_step)
         beta_t = self.index(self.beta, diffusion_step=diffusion_step)
@@ -101,7 +108,7 @@ class DDPM(nn.Module):
         )
         model_var = beta_t
 
-        if diffusion_step_idx > 0:
+        if step > 0:
             rand_noise = self.sample_noise(batch_size=noisy_image.size(0))
         else:
             rand_noise = torch.zeros(
@@ -116,48 +123,50 @@ class DDPM(nn.Module):
         frame = np.array(grid)
         return frame
 
-    def perform_denoising_process(self, noisy_image, start_diffusion_step_idx, n_frames=None):
+    def perform_denoising_process(self, noisy_image, start_step, n_frames=None):
         if n_frames is not None:
             frames = list()
 
         x = noisy_image
-        pbar = tqdm(range(start_diffusion_step_idx, -1, -1), leave=False)
-        for diffusion_step_idx in pbar:
+        pbar = tqdm(range(start_step, -1, -1), leave=False)
+        for step in pbar:
             pbar.set_description("Denoising...")
 
-            x = self.take_denoising_step(x, diffusion_step_idx=diffusion_step_idx)
+            x = self.take_denoising_step(x, step=step)
 
             if n_frames is not None and (
-                diffusion_step_idx % (self.n_diffusion_steps // n_frames) == 0
+                step % (self.n_diffusion_steps // n_frames) == 0
             ):
                 frames.append(self._get_frame(x))
         return frames if n_frames is not None else x
 
 
 class SDEdit(DDPM):
-    def __init__(self, model, img_size, device, kernel_size=3):
+    def __init__(self, model, data_dir, img_size, device, kernel_size=3):
         super().__init__(model=model, img_size=img_size, device=device)
 
         self.stroke_sim = StrokeSimulator(kernel_size=kernel_size)
 
-    def select_and_batchify_ref(self, data_dir, ref_idx, batch_size):
-        # if dataset == "celeba":
-        ds = CelebADS(
+        self.ds = CelebADS(
             data_dir=data_dir, split="test", img_size=self.img_size, hflip=False,
         )
-        return ds[ref_idx][None, ...].to(self.device).repeat(batch_size, 1, 1, 1)
-        # return ds[ref_idx].to(self.device)
 
-    def sample_from_stroke(self, data_dir, ref_idx, diffusion_step_idx, n_colors, batch_size):
+    def select_and_batchify_ref(self, ref_idx, batch_size):
+        # if dataset == "celeba":
+        return self.ds[ref_idx][None, ...].to(self.device).repeat(batch_size, 1, 1, 1)
+
+    def time_to_step(self, time):
+        return int(time * self.n_diffusion_steps)
+
+    def sample_from_stroke(self, ref_idx, interm_time, n_colors, batch_size):
         ref = self.select_and_batchify_ref(
-            data_dir=data_dir,
-            ref_idx=ref_idx,
-            batch_size=batch_size - 2,
+            ref_idx=ref_idx, batch_size=batch_size - 2,
         )
         stroke = self.stroke_sim(ref, n_colors=n_colors).to(self.device)
 
+        interm_step = self.time_to_step(interm_time)
         diffusion_step = self.batchify_diffusion_steps(
-            diffusion_step_idx=diffusion_step_idx - 1, batch_size=batch_size - 2,
+            step=interm_step - 1, batch_size=batch_size - 2,
         )
         noisy_stroke = self.perform_diffusion_process(
             ori_image=stroke,
@@ -166,6 +175,6 @@ class SDEdit(DDPM):
 
         denoised_stroke = self.perform_denoising_process(
             noisy_image=noisy_stroke,
-            start_diffusion_step_idx=diffusion_step_idx - 1,
+            start_step=interm_step - 1,
         )
         return torch.cat([ref[: 1, ...], stroke[: 1, ...], denoised_stroke], dim=0)

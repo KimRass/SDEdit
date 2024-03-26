@@ -6,8 +6,7 @@ import gc
 
 from utils import get_device, image_to_grid, save_image
 from unet import UNet
-# from sdedit import SDEdit
-from sdedit2 import SDEdit
+from sdedit import SDEdit
 
 
 def get_args():
