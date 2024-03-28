@@ -17,3 +17,11 @@
 
 # 3. Theoretical Backgrounds
 $$\mathbf{x}(t) = \alpha(t)\mathbf{x}(0) + \sigma(t)\mathbf{z}, \mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$$
+
+# 4. To-Dos
+- [x] Stroke input simulation.
+- [x] Sampling from stroke.
+- [ ] Total repeats.
+- [ ] VE SDEdit.
+- [ ] Sampling from scribble.
+- [ ] Image editing only on masked regions.
