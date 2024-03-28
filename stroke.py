@@ -16,51 +16,6 @@ from celeba import CelebADS
 from utils import image_to_grid
 
 
-def update_n_colors(label, n_pixels, thresh_pixel_per, n_colors):
-    n_colors_under_thresh = 0
-    label = label.flatten()
-    color_count = Counter(label)
-    for (_, count) in color_count.items():
-        if count / n_pixels < thresh_pixel_per:
-            n_colors_under_thresh += 1
-    n_colors -= -(-n_colors_under_thresh // 2) # Ceil integer division.
-    return n_colors, n_colors_under_thresh
-
-
-def process_result(center, label, shape, conv_method):
-    center = center.astype("uint8")
-    quantized_img = center[label]
-    quantized_img = quantized_img.reshape(shape)
-    quantized_img = cv2.cvtColor(quantized_img, conv_method)
-    center = cv2.cvtColor(np.expand_dims(center, axis=0), conv_method)[0]
-    return quantized_img
-
-
-def quantize_img(
-    img, n_colors, method1=cv2.COLOR_RGB2Lab, method2=cv2.COLOR_Lab2RGB,
-):
-    img = cv2.cvtColor(np.array(img), method1)
-    flat_img = img.reshape((-1, 3)).astype("float32")
-    n_pixels = img.size
-
-    thresh_pixel_per = 0.01
-    n_colors_under_thresh = n_colors
-    criteria = (
-        cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0,
-    )
-    center = None
-    label = None
-
-    while n_colors_under_thresh > 0:
-        _, label, center = cv2.kmeans(
-            flat_img, n_colors, None, criteria, 10, cv2.KMEANS_PP_CENTERS
-        )
-        n_colors, n_colors_under_thresh = update_n_colors(
-            label, n_pixels, thresh_pixel_per, n_colors  # , flat_img
-        )
-    return process_result(center, label, img.shape, method2)
-
-
 class MedianPool2d(nn.Module):
     """ Median pool (usable as median filter when stride=1) module.
     
@@ -116,12 +71,57 @@ class StrokeSimulator(object):
             kernel_size=kernel_size, stride=1, padding=kernel_size // 2,
         )
 
+    @staticmethod
+    def update_n_colors(label, n_pixels, thresh_pixel_per, n_colors):
+        n_colors_under_thresh = 0
+        label = label.flatten()
+        color_count = Counter(label)
+        for (_, count) in color_count.items():
+            if count / n_pixels < thresh_pixel_per:
+                n_colors_under_thresh += 1
+        n_colors -= -(-n_colors_under_thresh // 2) # Ceil integer division.
+        return n_colors, n_colors_under_thresh
+
+    @staticmethod
+    def process_result(center, label, shape, conv_method):
+        center = center.astype("uint8")
+        quantized_img = center[label]
+        quantized_img = quantized_img.reshape(shape)
+        quantized_img = cv2.cvtColor(quantized_img, conv_method)
+        center = cv2.cvtColor(np.expand_dims(center, axis=0), conv_method)[0]
+        return quantized_img
+
+
+    def quantize_img(
+        self, img, n_colors, method1=cv2.COLOR_RGB2Lab, method2=cv2.COLOR_Lab2RGB,
+    ):
+        img = cv2.cvtColor(np.array(img), method1)
+        flat_img = img.reshape((-1, 3)).astype("float32")
+        n_pixels = img.size
+
+        thresh_pixel_per = 0.01
+        n_colors_under_thresh = n_colors
+        criteria = (
+            cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0,
+        )
+        center = None
+        label = None
+
+        while n_colors_under_thresh > 0:
+            _, label, center = cv2.kmeans(
+                flat_img, n_colors, None, criteria, 10, cv2.KMEANS_PP_CENTERS
+            )
+            n_colors, n_colors_under_thresh = self.update_n_colors(
+                label, n_pixels, thresh_pixel_per, n_colors  # , flat_img
+            )
+        return self.process_result(center, label, img.shape, method2)
+
     def quantize_image_tensor(self, image, n_colors):
         new_batches = list()
         for batch in torch.chunk(image, chunks=image.size(0), dim=0):
             image = image_to_grid(batch, n_cols=1)
             img = np.array(image)
-            quantized_img = quantize_img(img, n_colors=n_colors)
+            quantized_img = self.quantize_img(img, n_colors=n_colors)
             quantized_image = self.transform(image=quantized_img)["image"]
             new_batches.append(quantized_image)
         return torch.stack(new_batches, dim=0)
@@ -132,8 +132,6 @@ class StrokeSimulator(object):
 
 
 if __name__ == "__main__":
-    import torch
-
     data_dir = "/home/dmeta0304/Documents/datasets/"
     img_size = 64
 
