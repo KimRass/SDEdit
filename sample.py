@@ -94,7 +94,7 @@ def main():
         interm_time=args.INTERM_TIME,
     )
     if args.MODE == "from_sim_stroke":
-        gen_image = model.sample_from_sim_stroke(
+        gen_image = model.sample_from_stroke(
             ref_idx=args.REF_IDX,
             interm_time=args.INTERM_TIME,
             n_colors=args.N_COLORS,
