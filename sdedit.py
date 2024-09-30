@@ -57,7 +57,9 @@ class DDPM(nn.Module):
 
     def sample_noise(self, batch_size):
         return torch.randn(
-            size=(batch_size, self.image_channels, self.img_size, self.img_size),
+            size=(
+                batch_size, self.image_channels, self.img_size, self.img_size,
+            ),
             device=self.device,
         )
 
@@ -74,13 +76,17 @@ class DDPM(nn.Module):
             device=self.device,
         )
 
-    def perform_diffusion_process(self, ori_image, diffusion_step, rand_noise=None):
+    def perform_diffusion_process(
+        self, ori_image, diffusion_step, rand_noise=None,
+    ):
         """
         $\mathbf{x}(t)
         = \alpha(t)\mathbf{x}(0) + \sigma(t)\mathbf{z},
         \mathbf{z} \sim \mathcal{N}(\mathbf{0}, \mathbf{I})$
         """
-        signal_rate_t = self.index(self.signal_rate, diffusion_step=diffusion_step)
+        signal_rate_t = self.index(
+            self.signal_rate, diffusion_step=diffusion_step,
+        )
         noise_rate_t = self.index(self.noise_rate, diffusion_step=diffusion_step)
         if rand_noise is None:
             rand_noise = self.sample_noise(batch_size=ori_image.size(0))
